@@ -1,6 +1,6 @@
 import machine
 import network
-import socketddads
+import socket
 
 ap = network.WLAN (network.AP_IF)
 ap.active (True)
