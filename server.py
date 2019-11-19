@@ -73,7 +73,7 @@ class IotServer:
         rows = ['<tr><td>{}</td><td bgcolor="{}">{}</td></tr>'
                     .format(str(p), "green" if p.value() else "red", p.value()) for p in self._pins]
         rows.append('<tr><td>temp</td><td bgcolor="yellow">{}</td></tr>'.format(self._temp_sensor.read_temperature()))
-        return site.format('\n'.join(rows))
+        return site % '\n'.join(rows)
 
     def run(self):
         self._isRunning = True
