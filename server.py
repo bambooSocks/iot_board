@@ -36,16 +36,18 @@ class IotServer:
     def __init__(self):
         self._html = ''
         self._isRunning = False
-        self._pin_nums = {"Button1": 33, "Button2": 14}
-        self._ap = network.WLAN(network.AP_IF)
+
+        self._pin_names = ["Button1", "Button2"]
+        self._pin_nums = [Pin(i, Pin.IN) for i in [33, 14]]
+        self._pins = dict(zip(self._pin_names, self._pin_nums))
 
         self._temp_sensor = MCP9808(scl=Pin(22), sda=Pin(23))
-        self._temp_sensor.set_resolution_level(MCP9808.RES_LEVEL4)
-
-        self._pins = [Pin(self._pin_nums[i], Pin.IN) for i in self._pin_nums]
+        self._temp_sensor.set_resolution_level(MCP9808.RES_LEVEL2)
 
         # start access point
+        self._ap = network.WLAN(network.AP_IF)
         self.start_ap("group12", "qqwweerrttyy")
+
         # start socket
         self._addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
         self._s = socket.socket()
@@ -57,21 +59,19 @@ class IotServer:
         self._ap.active(True)
         self._ap.config(essid=name)
         self._ap.config(authmode=3, password=pswd)
-        # pass
 
     def load_html(self):
         # if empty read, otherwise return read data
-        if self._html == "":
+        if self._html == '':
             with open("index.html", "r") as f:
                 for line in f:
                     self._html += line
-        print(self._html)
         return self._html
 
     def generate_html(self):
         site = self.load_html()
         rows = ['<tr><td>{}</td><td bgcolor="{}">{}</td></tr>'
-                    .format(str(p), "green" if p.value() else "red", p.value()) for p in self._pins]
+                    .format(k, "green" if v.value() else "red", v.value()) for k, v in self._pins.items()]
         rows.append('<tr><td>temp</td><td bgcolor="yellow">{}</td></tr>'.format(self._temp_sensor.read_temperature()))
         return site % '\n'.join(rows)
 
@@ -81,12 +81,18 @@ class IotServer:
             cl, addr = self._s.accept()
             print('Client connected from', addr)
             cl_file = cl.makefile('rwb', 0)
+            request = bytes()
             while True:
                 line = cl_file.readline()
+                request += line
                 print(line)
                 if not line or line == b'\r\n':
                     break
+            print("REQUEST:")
+            print(request)
             response = self.generate_html()
+            print("RESPONSE:")
+            print(response)
             cl.send(response.encode())
             cl.close()
 
