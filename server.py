@@ -1,7 +1,7 @@
-from machine import Pin
-from machine import I2C
+from machine import Pin, I2C
 import network
 import socket
+import json
 
 
 class MCP9808:
@@ -31,18 +31,23 @@ class MCP9808:
     def set_resolution_level(self, level):
         self._i2c.writeto_mem(self._addr, self._res_reg, level)
 
+    def read(self):
+        return self.read_temperature()
+
 
 class IotServer:
     def __init__(self):
         self._html = ''
         self._isRunning = False
 
+        self._supported_pins = [33, 14]
         self._pin_names = ["Button1", "Button2"]
-        self._pin_nums = [Pin(i, Pin.IN) for i in [33, 14]]
-        self._pins = dict(zip(self._pin_names, self._pin_nums))
+        self._pin_objs = [Pin(i, Pin.IN) for i in self._supported_pins]
+        self._pins = dict(zip(self._pin_names, self._pin_objs))
 
-        self._temp_sensor = MCP9808(scl=Pin(22), sda=Pin(23))
-        self._temp_sensor.set_resolution_level(MCP9808.RES_LEVEL2)
+        self._sensor_names = ["temperature"]
+        self._sensor_objs = [MCP9808(scl=Pin(22), sda=Pin(23))]
+        self._sensors = dict(zip(self._sensor_names, self._sensor_objs))
 
         # start access point
         self._ap = network.WLAN(network.AP_IF)
@@ -64,16 +69,51 @@ class IotServer:
         # if empty read, otherwise return read data
         if self._html == '':
             with open("index.html", "r") as f:
-                for line in f:
-                    self._html += line
+                self._html = f.read()
         return self._html
 
     def generate_html(self):
         site = self.load_html()
-        rows = ['<tr><td>{}</td><td bgcolor="{}">{}</td></tr>'
-                    .format(k, "green" if v.value() else "red", v.value()) for k, v in self._pins.items()]
-        rows.append('<tr><td>temp</td><td bgcolor="yellow">{}</td></tr>'.format(self._temp_sensor.read_temperature()))
-        return site % '\n'.join(rows)
+        rows1 = ['<tr><td>{}</td><td bgcolor="{}">{}</td></tr>'
+                     .format(k, "green" if v.value() else "red", v.value()) for k, v in self._pins.items()]
+        rows2 = ['<tr><td>{}</td><td bgcolor="yellow">{}</td></tr>'
+                     .format(k, v.read())for k, v in self._sensors.items()]
+        return "HTTP/1.1 200 OK\nContent-type: text/html\n\n" + site % '\n'.join(rows1 + rows2) + "\r\n"
+
+    def generate_json(self, dict_):
+        return "HTTP/1.1 200 OK\nContent-type: application/json\n\n" + json.dumps(dict_) + "\r\n"
+
+    def handle_request(self, request):
+        if request == b'':
+            return self.generate_html()
+
+        path = request.decode().split(" ")[1]
+        if path == '/':
+            return self.generate_html()
+        elif path == '/pins':
+            d = {"pins": self._pin_names}
+            return self.generate_json(d)
+        elif path == '/sensors':
+            d = {"sensors": self._sensor_names}
+            return self.generate_json(d)
+        elif "/sensor/" in path:
+            sen = path.split("/")[-1]
+            if sen in self._sensor_names:
+                d = {"sensor": sen,
+                     "data": self._sensors[sen].read()}
+                return self.generate_json(d)
+            else:
+                return "HTTP/1.1 400 BAD REQUEST"
+        elif "/pin/" in path:
+            pin = path.split("/")[-1]
+            if pin in self._pin_names:
+                d = {"sensor": pin,
+                     "data": self._pins[pin].value()}
+                return self.generate_json(d)
+            else:
+                return "HTTP/1.1 400 BAD REQUEST"
+        else:
+            return "HTTP/1.1 404 NOT FOUND"
 
     def run(self):
         self._isRunning = True
@@ -90,7 +130,9 @@ class IotServer:
                     break
             print("REQUEST:")
             print(request)
-            response = self.generate_html()
+
+            response = self.handle_request(request)
+
             print("RESPONSE:")
             print(response)
             cl.send(response.encode())
