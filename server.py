@@ -17,6 +17,7 @@ class MCP9808:
         self._temp_reg = 0x05
         self._res_reg = 0x08
 
+    # function to convert the raw temperature data to Celsius scale
     def _temp_to_c(self, raw_data):
         val = raw_data[0] << 8 | raw_data[1]
         temp = (val & 0xFFF) / 16
@@ -31,6 +32,7 @@ class MCP9808:
     def set_resolution_level(self, level):
         self._i2c.writeto_mem(self._addr, self._res_reg, level)
 
+    # function to make sensor reading consistent
     def read(self):
         return self.read_temperature()
 
@@ -40,11 +42,13 @@ class IotServer:
         self._html = ''
         self._isRunning = False
 
+        # setup all used input pins
         self._supported_pins = [33, 14]
         self._pin_names = ["Button1", "Button2"]
         self._pin_objs = [Pin(i, Pin.IN) for i in self._supported_pins]
         self._pins = dict(zip(self._pin_names, self._pin_objs))
 
+        # setup all used sensors
         self._sensor_names = ["temperature"]
         self._sensor_objs = [MCP9808(scl=Pin(22), sda=Pin(23))]
         self._sensors = dict(zip(self._sensor_names, self._sensor_objs))
@@ -84,9 +88,11 @@ class IotServer:
         return "HTTP/1.1 200 OK\nContent-type: application/json\n\n" + json.dumps(dict_) + "\r\n"
 
     def handle_request(self, request):
+        # in case of no request return the website
         if request == b'':
             return self.generate_html()
 
+        # parse the path and execute corresponding request
         path = request.decode().split(" ")[1]
         if path == '/':
             return self.generate_html()
@@ -118,25 +124,31 @@ class IotServer:
     def run(self):
         self._isRunning = True
         while self._isRunning:
-            cl, addr = self._s.accept()
-            print('Client connected from', addr)
-            cl_file = cl.makefile('rwb', 0)
-            request = bytes()
-            while True:
-                line = cl_file.readline()
-                request += line
-                print(line)
-                if not line or line == b'\r\n':
-                    break
-            print("REQUEST:")
-            print(request)
+            try:
+                # wait for connection
+                cl, addr = self._s.accept()
+                print('Client connected from', addr)
+                cl_file = cl.makefile('rwb', 0)
+                # read request
+                request = bytes()
+                while True:
+                    line = cl_file.readline()
+                    request += line
+                    print(line)
+                    if not line or line == b'\r\n':
+                        break
+                print("REQUEST:")
+                print(request)
 
-            response = self.handle_request(request)
+                # handle request and return response
+                response = self.handle_request(request)
 
-            print("RESPONSE:")
-            print(response)
-            cl.send(response.encode())
-            cl.close()
+                print("RESPONSE:")
+                print(response)
+                cl.send(response.encode())
+                cl.close()
+            except KeyboardInterrupt:
+                self._isRunning = False
 
     def stop(self):
         self._isRunning = False
@@ -144,7 +156,5 @@ class IotServer:
 
 if __name__ == '__main__':
     s = IotServer()
-    try:
-        s.run()
-    except KeyboardInterrupt:
-        s.stop()
+    s.run()
+
