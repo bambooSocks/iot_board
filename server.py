@@ -2,6 +2,7 @@ from machine import Pin, I2C
 import network
 import socket
 import json
+import neopixel
 
 
 class MCP9808:
@@ -53,12 +54,15 @@ class IotServer:
         self._sensor_objs = [MCP9808(scl=Pin(22), sda=Pin(23))]
         self._sensors = dict(zip(self._sensor_names, self._sensor_objs))
 
-        #setup all used pins
+        # setup all used pins
         self._supported_leds = [15, 32, 13]
         self._leds_color = ["green", "yellow", "red"]
         self._led_objs = [Pin(i, Pin.OUT) for i in self._supported_leds]
         self._leds = dict(zip(self._leds_color, self._led_objs))
 
+        # setup Neopixels
+        self._supported_neopixels = [0, 1, 2]
+        self._np = neopixel.NeoPixel(Pin(4), 3)
 
         # start access point
         self._ap = network.WLAN(network.AP_IF)
@@ -120,13 +124,13 @@ class IotServer:
         elif "/pin/" in path:
             pin = path.split("/")[-1]
             if pin in self._pin_names:
-                d = {"sensor": pin,
+                d = {"pin": pin,
                      "data": self._pins[pin].value()}
                 return self.generate_json(d)
             else:
                 return "HTTP/1.1 400 BAD REQUEST"
         elif "/led" in path:
-            query = path.split("?")[1:len(path)-1]
+            query = path.split("?")[-1].split("&")
             state = ''
             color = ''
             for q in query:
@@ -144,7 +148,7 @@ class IotServer:
                     else:
                         return "HTTP/1.1 400 BAD REQUEST"
             if state == '' and color == '':
-                return "HTTP/1.1 400 BAD REQUEST"
+                return "HTTP/1.1 400 BAD REQUEST\n\nNO PARAMETERS\r\n"
             elif state == '':
                 current = self._leds[color].value()
                 print("Current pin value is", current)
@@ -158,7 +162,50 @@ class IotServer:
             else:
                 self._leds[color].value(1 if state == 'on' else 0)
                 return "HTTP/1.1 200 OK\n\nOK\r\n"
+        elif "/neo" in path:
+            query = path.split("?")[-1].split("&")
+            rgb = []
+            num = ''
+            for q in query:
+                if 'rgb' in q:
+                    c = q.split("=")[1].split("-")
+                    if len(c) != 3:
+                        return "HTTP/1.1 400 BAD REQUEST"
 
+                    try:
+                        for col in c:
+                            if int(col) < 0 or int(col) > 255:
+                                return "HTTP/1.1 400 BAD REQUEST"
+                    except ValueError:
+                        return "HTTP/1.1 400 BAD REQUEST"
+
+                    rgb = c
+                if 'number' in q:
+                    n = q.split("=")[1]
+
+                    try:
+                        if not int(n) in self._supported_neopixels:
+                            return "HTTP/1.1 400 BAD REQUEST"
+                    except ValueError:
+                        return "HTTP/1.1 400 BAD REQUEST"
+
+                    num = n
+
+            if num == '' and rgb == []:
+                return "HTTP/1.1 400 BAD REQUEST\n\nNO PARAMETERS\r\n"
+            elif num == '':
+                for i in self._supported_neopixels:
+                    self._np[i] = (int(rgb[1]), int(rgb[0]), int(rgb[2]))
+                self._np.write()
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
+            elif rgb == []:
+                self._np[int(num)] = (0, 0, 0)
+                self._np.write()
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
+            else:
+                self._np[int(num)] = (int(rgb[1]), int(rgb[0]), int(rgb[2]))
+                self._np.write()
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
         else:
             return "HTTP/1.1 404 NOT FOUND"
 
