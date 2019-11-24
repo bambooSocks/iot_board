@@ -53,6 +53,13 @@ class IotServer:
         self._sensor_objs = [MCP9808(scl=Pin(22), sda=Pin(23))]
         self._sensors = dict(zip(self._sensor_names, self._sensor_objs))
 
+        #setup all used pins
+        self._supported_leds = [15, 32, 13]
+        self._leds_color = ["green", "yellow", "red"]
+        self._led_objs = [Pin(i, Pin.OUT) for i in self._supported_leds]
+        self._leds = dict(zip(self._leds_color, self._led_objs))
+
+
         # start access point
         self._ap = network.WLAN(network.AP_IF)
         self.start_ap("group12", "qqwweerrttyy")
@@ -118,6 +125,40 @@ class IotServer:
                 return self.generate_json(d)
             else:
                 return "HTTP/1.1 400 BAD REQUEST"
+        elif "/led" in path:
+            query = path.split("?")[1:len(path)-1]
+            state = ''
+            color = ''
+            for q in query:
+                if 'state' in q:
+                    s = q.split("=")[1]
+                    if s == 'on' or s == 'off':
+                        state = s
+                        continue
+                    else:
+                        return "HTTP/1.1 400 BAD REQUEST"
+                if 'color' in q:
+                    c = q.split("=")[1]
+                    if c in self._leds_color:
+                        color = c
+                    else:
+                        return "HTTP/1.1 400 BAD REQUEST"
+            if state == '' and color == '':
+                return "HTTP/1.1 400 BAD REQUEST"
+            elif state == '':
+                current = self._leds[color].value()
+                print("Current pin value is", current)
+                self._leds[color].value(0 if current == 1 else 1)
+                print("new pin value is", self._leds[color].value())
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
+            elif color == '':
+                for c in self._leds_color:
+                    self._leds[c].value(1 if state == 'on' else 0)
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
+            else:
+                self._leds[color].value(1 if state == 'on' else 0)
+                return "HTTP/1.1 200 OK\n\nOK\r\n"
+
         else:
             return "HTTP/1.1 404 NOT FOUND"
 
@@ -145,6 +186,7 @@ class IotServer:
 
                 print("RESPONSE:")
                 print(response)
+
                 cl.send(response.encode())
                 cl.close()
             except KeyboardInterrupt:
