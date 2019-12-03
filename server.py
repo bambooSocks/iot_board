@@ -113,7 +113,7 @@ class IotServer:
         elif "/pin/" in path:
             pin = path.split("/")[-1]
             if pin in self._pin_names:
-                d = {"sensor": pin,
+                d = {"pin": pin,
                      "data": self._pins[pin].value()}
                 return self.generate_json(d)
             else:
